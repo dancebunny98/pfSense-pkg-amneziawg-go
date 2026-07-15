@@ -37,7 +37,7 @@ jobs:
             echo "Directory cmd/amneziawg-go not found, assuming main.go in root"
           fi
 
-      - name: Run go vet (optional, not blocking)
+      - name: Run go vet (optional)
         working-directory: amneziawg-src
         run: go vet ./... || echo "go vet found issues, but continuing..."
 
@@ -45,7 +45,6 @@ jobs:
         working-directory: amneziawg-src
         run: go test ./... || echo "Tests failed or none - not blocking"
 
-      # ================== Сборка бинарника ==================
       - name: Build amneziawg-go binary
         working-directory: amneziawg-src
         run: |
@@ -57,7 +56,6 @@ jobs:
             GOOS=freebsd GOARCH=${{ env.ARCH }} CGO_ENABLED=0 go build -o ../amneziawg-go .
           fi
 
-      # ================== Подготовка staging ==================
       - name: Prepare staging directory
         run: |
           mkdir -p staging/usr/local/bin
@@ -66,10 +64,8 @@ jobs:
           mkdir -p staging/usr/local/etc/rc.d
           mkdir -p staging/usr/local/etc/inc
 
-          # Копируем бинарник
           cp amneziawg-go staging/usr/local/bin/
 
-          # Копируем GUI/RC файлы из репозитория
           if [ -d pfsense-files ] && [ "$(ls -A pfsense-files 2>/dev/null)" ]; then
             echo "Copying pfsense-files content..."
             rsync -av --exclude='.gitkeep' pfsense-files/ staging/
@@ -84,7 +80,6 @@ jobs:
             echo "WARNING: GUI/RC files not found. Only binary will be packaged."
           fi
 
-      # ================== Генерация XML-манифеста pfSense ==================
       - name: Create pfSense package XML
         run: |
           cat > staging/usr/local/pkg/amneziawg.xml << 'XML'
@@ -100,7 +95,6 @@ jobs:
             <description>
               Integrates AmneziaWG (obfuscated WireGuard) into pfSense.
               Supports all obfuscation parameters: Jc, Jmin, Jmax, S1, S2, H1-H4.
-              Provides a GUI for tunnel management and service control.
             </description>
             <include_file>/usr/local/pkg/amneziawg.inc</include_file>
             <menu>
@@ -117,28 +111,24 @@ jobs:
             </service>
             <custom_php_install_command>
               <![CDATA[
-              // Create config directory and enable service
               mwexec("mkdir -p /var/etc/amneziawg");
               mwexec("/usr/local/etc/rc.d/amneziawg enable");
               ]]>
             </custom_php_install_command>
             <custom_php_pre_deinstall_command>
               <![CDATA[
-              // Stop service and remove config files
               mwexec("/usr/local/etc/rc.d/amneziawg stop");
               mwexec("rm -rf /var/etc/amneziawg");
               ]]>
             </custom_php_pre_deinstall_command>
             <custom_php_resync_config_command>
               <![CDATA[
-              // Restart service when config is synced
               mwexec("/usr/local/etc/rc.d/amneziawg restart");
               ]]>
             </custom_php_resync_config_command>
           </packagegui>
           XML
 
-      # ================== Создание +MANIFEST (корректный формат) ==================
       - name: Create +MANIFEST
         run: |
           cat > staging/+MANIFEST << 'EOF'
@@ -153,7 +143,6 @@ jobs:
           prefix: /usr/local
           EOF
 
-      # ================== Сборка .pkg ==================
       - name: Build .pkg
         run: |
           cd staging
@@ -165,39 +154,24 @@ jobs:
           cd ..
           echo "Package created: ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg"
 
+      # ================== Создание тега (если ещё нет) ==================
+      - name: Create/Update tag v1.0.0
+        if: github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -fa v${{ env.VERSION }} -m "Release v${{ env.VERSION }}"
+          git push -f origin v${{ env.VERSION }}
+
       # ================== Релиз ==================
       - name: Generate release notes
         if: github.event_name != 'pull_request'
-        id: release_notes
         run: |
-          echo '## Установка' >> release_notes.md
-          echo '```bash' >> release_notes.md
-          echo "# Скачивание пакета через curl" >> release_notes.md
-          echo "curl -LO https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg" >> release_notes.md
-          echo '' >> release_notes.md
-          echo "# Установка" >> release_notes.md
-          echo "pkg add ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg" >> release_notes.md
-          echo '```' >> release_notes.md
-          echo '' >> release_notes.md
-          echo '## Удаление' >> release_notes.md
-          echo '```bash' >> release_notes.md
-          echo "pkg delete ${{ env.PKG_NAME }}" >> release_notes.md
-          echo '```' >> release_notes.md
-          echo '' >> release_notes.md
-          echo "## Установка из исходников (git)" >> release_notes.md
-          echo '```bash' >> release_notes.md
-          echo "git clone https://github.com/${{ github.repository }}.git" >> release_notes.md
-          echo "cd $(basename ${{ github.repository }})" >> release_notes.md
-          echo "# Следуйте инструкциям в README.md" >> release_notes.md
-          echo '```' >> release_notes.md
-
-      - name: Create/Update Release
-        if: github.event_name != 'pull_request'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ env.VERSION }}
-          name: Release v${{ env.VERSION }}
-          body_path: release_notes.md
-          files: ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          cat > release_notes.md << 'NOTES'
+          ## Установка
+          ```bash
+          # Скачивание пакета через curl
+          curl -LO https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg
+          
+          # Установка
+          pkg add ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg
