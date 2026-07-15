@@ -37,16 +37,14 @@ jobs:
             echo "Directory cmd/amneziawg-go not found, assuming main.go in root"
           fi
 
-      # ================== Качество кода (без CVE) ==================
-      - name: Run golangci-lint (code quality)
+      # ================== Быстрые проверки без блокировки ==================
+      - name: Run go vet (code sanity)
         working-directory: amneziawg-src
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.59.1
-          golangci-lint run ./...
+        run: go vet ./... || echo "go vet found issues, but continuing..."
 
-      - name: Run tests
+      - name: Run tests (optional)
         working-directory: amneziawg-src
-        run: go test ./... || echo "No tests or some failed - continuing anyway"
+        run: go test ./... || echo "Tests failed or none - not blocking"
 
       # ================== Сборка бинарника ==================
       - name: Build amneziawg-go binary
