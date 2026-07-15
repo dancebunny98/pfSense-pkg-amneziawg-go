@@ -130,12 +130,12 @@ jobs:
           </packagegui>
           XML
 
-      - name: Create +MANIFEST
+      - name: Create +MANIFEST with correct architecture
         run: |
           cat > staging/+MANIFEST << 'EOF'
           name: pfSense-pkg-amneziawg
           version: "1.0.0"
-          arch: freebsd:amd64
+          arch: FreeBSD:15:amd64
           origin: net/pfSense-pkg-amneziawg
           comment: "AmneziaWG obfuscated VPN for pfSense"
           desc: "Integrates amneziawg-go with GUI, supports all obfuscation parameters (Jc, Jmin, Jmax, S1, S2, H1-H4)."
@@ -162,21 +162,19 @@ jobs:
           echo "Package created: ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg"
           ls -lh ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg
 
-      # Обязательно сохраняем .pkg как артефакт (видно в Actions)
       - name: Upload artifact (.pkg)
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}
           path: ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg
 
-      # Релиз только при push в main или ручном запуске
       - name: Force update tag (if not PR)
         if: github.event_name != 'pull_request'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -fa v${{ env.VERSION }} -m "Release v${{ env.VERSION }}"
-          git push -f origin v${{ env.VERSION }} || echo "Tag push failed (maybe already up to date)"
+          git push -f origin v${{ env.VERSION }} || echo "Tag push failed"
 
       - name: Generate release notes
         if: github.event_name != 'pull_request'
