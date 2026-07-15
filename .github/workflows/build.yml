@@ -52,17 +52,15 @@ jobs:
           mkdir -p staging/usr/local/etc/rc.d
           mkdir -p staging/usr/local/etc/inc
 
-          # Копируем собранный бинарник (он всегда здесь)
+          # Копируем собранный бинарник
           cp amneziawg-go staging/usr/local/bin/
 
-          # Определяем источник GUI/RC файлов
+          # Копируем остальные файлы (GUI/RC)
           if [ -d pfsense-files ] && [ "$(ls -A pfsense-files 2>/dev/null)" ]; then
-            echo "Found pfsense-files/, copying its content..."
+            echo "Copying pfsense-files content..."
             rsync -av --exclude='.gitkeep' pfsense-files/ staging/
           elif [ -d usr/local ]; then
             echo "Found usr/local/ in repository root, copying all relevant files..."
-            # Копируем всё, что лежит в корневом usr/local/ (но не вложенные подкаталоги из других частей)
-            # Используем rsync, исключая системные папки верхнего уровня
             rsync -av \
               --exclude='.git' \
               --exclude='.github' \
@@ -78,7 +76,7 @@ jobs:
             echo "Only the binary will be packaged. GUI/RC scripts missing!"
           fi
 
-      - name: Create package manifest
+      - name: Create +MANIFEST file
         run: |
           cat > staging/+MANIFEST << EOF
           name: pfSense-pkg-amneziawg
@@ -92,13 +90,22 @@ jobs:
           prefix: /usr/local
           EOF
 
-      - name: Install FreeBSD pkg tool
-        run: sudo apt-get update && sudo apt-get install -y pkg
-
-      - name: Build .pkg
+      - name: Build .pkg (manual tar)
         run: |
-          pkg create -M staging/+MANIFEST -r staging -o .
-          mv pfSense-pkg-amneziawg-1.0.0.pkg pfSense-pkg-amneziawg-1.0.0-${{ matrix.arch }}.pkg
+          # Переходим в staging
+          cd staging
+          # Убеждаемся, что +MANIFEST будет первым файлом в архиве (обязательно для pkg)
+          # Сортируем: сначала +MANIFEST, затем все остальные файлы (кроме каталогов)
+          # Формируем список файлов: сначала +MANIFEST, потом всё остальное
+          FILES_LIST=$(find . -type f ! -name '+MANIFEST' | sort)
+          # Создаём tar-архив с +MANIFEST первым, остальные файлы вторыми, без родительской директории
+          tar -cf ../pfSense-pkg-amneziawg-1.0.0-${{ matrix.arch }}.pkg \
+            --format=ustar \
+            +MANIFEST \
+            $FILES_LIST
+          # Возвращаемся на уровень выше
+          cd ..
+          echo "Created pfSense-pkg-amneziawg-1.0.0-${{ matrix.arch }}.pkg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
