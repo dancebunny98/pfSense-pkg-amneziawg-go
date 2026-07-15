@@ -20,12 +20,9 @@ jobs:
       - name: Clone amneziawg-go source
         run: |
           git clone --depth=1 https://github.com/amnezia-vpn/amneziawg-go.git amneziawg-src
-          echo "=== Cloned directory structure ==="
-          ls -la amneziawg-src/
           echo "=== Checking cmd/amneziawg-go ==="
           if [ -d amneziawg-src/cmd/amneziawg-go ]; then
             echo "Found cmd/amneziawg-go"
-            ls -la amneziawg-src/cmd/amneziawg-go/
           else
             echo "Directory cmd/amneziawg-go not found, assuming main.go in root"
           fi
@@ -48,9 +45,25 @@ jobs:
 
       - name: Prepare staging directory
         run: |
+          # Создаём обязательные каталоги
           mkdir -p staging/usr/local/bin
+          mkdir -p staging/usr/local/pkg
+          mkdir -p staging/usr/local/www/amneziawg
+          mkdir -p staging/usr/local/etc/rc.d
+          mkdir -p staging/usr/local/etc/inc
+
+          # Копируем собранный бинарник
           cp amneziawg-go staging/usr/local/bin/
-          cp -r pfsense-files/* staging/
+
+          # Копируем все файлы из pfsense-files, исключая .gitkeep и пустые каталоги
+          if [ -d pfsense-files ]; then
+            echo "Copying pfsense-files content..."
+            # Используем rsync с игнорированием .gitkeep, чтобы не тащить служебные файлы
+            rsync -av --exclude='.gitkeep' pfsense-files/ staging/
+          else
+            echo "WARNING: pfsense-files directory not found."
+            echo "Only the binary will be packaged. GUI/RC scripts missing!"
+          fi
 
       - name: Create package manifest
         run: |
