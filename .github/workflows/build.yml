@@ -14,12 +14,21 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - name: Checkout repo
+      - name: Checkout this repository
         uses: actions/checkout@v4
 
       - name: Clone amneziawg-go source
         run: |
-          git clone https://github.com/amnezia-vpn/amneziawg-go.git amneziawg-src
+          git clone --depth=1 https://github.com/amnezia-vpn/amneziawg-go.git amneziawg-src
+          echo "=== Cloned directory structure ==="
+          ls -la amneziawg-src/
+          echo "=== Checking cmd/amneziawg-go ==="
+          if [ -d amneziawg-src/cmd/amneziawg-go ]; then
+            echo "Found cmd/amneziawg-go"
+            ls -la amneziawg-src/cmd/amneziawg-go/
+          else
+            echo "Directory cmd/amneziawg-go not found, assuming main.go in root"
+          fi
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -29,7 +38,13 @@ jobs:
       - name: Build amneziawg-go binary
         working-directory: amneziawg-src
         run: |
-          GOOS=freebsd GOARCH=${{ matrix.arch }} CGO_ENABLED=0 go build -o ../amneziawg-go ./cmd/amneziawg-go
+          if [ -f cmd/amneziawg-go/main.go ]; then
+            echo "Building from cmd/amneziawg-go"
+            GOOS=freebsd GOARCH=${{ matrix.arch }} CGO_ENABLED=0 go build -o ../amneziawg-go ./cmd/amneziawg-go
+          else
+            echo "Building from repository root"
+            GOOS=freebsd GOARCH=${{ matrix.arch }} CGO_ENABLED=0 go build -o ../amneziawg-go .
+          fi
 
       - name: Prepare staging directory
         run: |
@@ -50,6 +65,9 @@ jobs:
           www: https://github.com/your-repo/pfSense-amneziawg
           prefix: /usr/local
           EOF
+
+      - name: Install FreeBSD pkg tool
+        run: sudo apt-get update && sudo apt-get install -y pkg
 
       - name: Build .pkg
         run: |
