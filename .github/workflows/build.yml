@@ -45,23 +45,36 @@ jobs:
 
       - name: Prepare staging directory
         run: |
-          # Создаём обязательные каталоги
+          # Создаём обязательные каталоги (на случай, если в исходниках их нет)
           mkdir -p staging/usr/local/bin
           mkdir -p staging/usr/local/pkg
           mkdir -p staging/usr/local/www/amneziawg
           mkdir -p staging/usr/local/etc/rc.d
           mkdir -p staging/usr/local/etc/inc
 
-          # Копируем собранный бинарник
+          # Копируем собранный бинарник (он всегда здесь)
           cp amneziawg-go staging/usr/local/bin/
 
-          # Копируем все файлы из pfsense-files, исключая .gitkeep и пустые каталоги
-          if [ -d pfsense-files ]; then
-            echo "Copying pfsense-files content..."
-            # Используем rsync с игнорированием .gitkeep, чтобы не тащить служебные файлы
+          # Определяем источник GUI/RC файлов
+          if [ -d pfsense-files ] && [ "$(ls -A pfsense-files 2>/dev/null)" ]; then
+            echo "Found pfsense-files/, copying its content..."
             rsync -av --exclude='.gitkeep' pfsense-files/ staging/
+          elif [ -d usr/local ]; then
+            echo "Found usr/local/ in repository root, copying all relevant files..."
+            # Копируем всё, что лежит в корневом usr/local/ (но не вложенные подкаталоги из других частей)
+            # Используем rsync, исключая системные папки верхнего уровня
+            rsync -av \
+              --exclude='.git' \
+              --exclude='.github' \
+              --exclude='staging' \
+              --exclude='amneziawg-src' \
+              --exclude='pfsense-files' \
+              --exclude='.gitkeep' \
+              --exclude='README.md' \
+              --exclude='LICENSE' \
+              ./ staging/
           else
-            echo "WARNING: pfsense-files directory not found."
+            echo "WARNING: Neither pfsense-files/ nor usr/local/ found."
             echo "Only the binary will be packaged. GUI/RC scripts missing!"
           fi
 
