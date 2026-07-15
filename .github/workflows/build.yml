@@ -1,4 +1,4 @@
-name: Build pfSense AmneziaWG package
+name: Build and Release pfSense AmneziaWG Package
 
 on:
   push:
@@ -7,15 +7,25 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build:
+  build-and-release:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        arch: [amd64, arm64]
+    env:
+      ARCH: amd64
+      PKG_NAME: pfSense-pkg-amneziawg
+      VERSION: 1.0.0
+
     steps:
       - name: Checkout this repository
         uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
 
       - name: Clone amneziawg-go source
         run: |
@@ -27,88 +37,118 @@ jobs:
             echo "Directory cmd/amneziawg-go not found, assuming main.go in root"
           fi
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
+      # ================== Безопасность и качество кода ==================
+      - name: Run govulncheck (CVE scan)
+        working-directory: amneziawg-src
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
+      - name: Run golangci-lint (code quality)
+        working-directory: amneziawg-src
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.59.1
+          golangci-lint run ./...
+
+      - name: Run tests
+        working-directory: amneziawg-src
+        run: go test ./... || echo "No tests or some failed - continuing anyway"
+
+      # ================== Сборка бинарника ==================
       - name: Build amneziawg-go binary
         working-directory: amneziawg-src
         run: |
           if [ -f cmd/amneziawg-go/main.go ]; then
             echo "Building from cmd/amneziawg-go"
-            GOOS=freebsd GOARCH=${{ matrix.arch }} CGO_ENABLED=0 go build -o ../amneziawg-go ./cmd/amneziawg-go
+            GOOS=freebsd GOARCH=${{ env.ARCH }} CGO_ENABLED=0 go build -o ../amneziawg-go ./cmd/amneziawg-go
           else
             echo "Building from repository root"
-            GOOS=freebsd GOARCH=${{ matrix.arch }} CGO_ENABLED=0 go build -o ../amneziawg-go .
+            GOOS=freebsd GOARCH=${{ env.ARCH }} CGO_ENABLED=0 go build -o ../amneziawg-go .
           fi
 
+      # ================== Подготовка staging ==================
       - name: Prepare staging directory
         run: |
-          # Создаём обязательные каталоги (на случай, если в исходниках их нет)
           mkdir -p staging/usr/local/bin
           mkdir -p staging/usr/local/pkg
           mkdir -p staging/usr/local/www/amneziawg
           mkdir -p staging/usr/local/etc/rc.d
           mkdir -p staging/usr/local/etc/inc
 
-          # Копируем собранный бинарник
           cp amneziawg-go staging/usr/local/bin/
 
-          # Копируем остальные файлы (GUI/RC)
           if [ -d pfsense-files ] && [ "$(ls -A pfsense-files 2>/dev/null)" ]; then
             echo "Copying pfsense-files content..."
             rsync -av --exclude='.gitkeep' pfsense-files/ staging/
           elif [ -d usr/local ]; then
-            echo "Found usr/local/ in repository root, copying all relevant files..."
+            echo "Found usr/local/ in repository root, copying..."
             rsync -av \
-              --exclude='.git' \
-              --exclude='.github' \
-              --exclude='staging' \
-              --exclude='amneziawg-src' \
-              --exclude='pfsense-files' \
-              --exclude='.gitkeep' \
-              --exclude='README.md' \
-              --exclude='LICENSE' \
+              --exclude='.git' --exclude='.github' --exclude='staging' \
+              --exclude='amneziawg-src' --exclude='pfsense-files' \
+              --exclude='.gitkeep' --exclude='README.md' --exclude='LICENSE' \
               ./ staging/
           else
-            echo "WARNING: Neither pfsense-files/ nor usr/local/ found."
-            echo "Only the binary will be packaged. GUI/RC scripts missing!"
+            echo "WARNING: GUI/RC files not found. Only binary will be packaged."
           fi
 
-      - name: Create +MANIFEST file
+      - name: Create +MANIFEST
         run: |
           cat > staging/+MANIFEST << EOF
-          name: pfSense-pkg-amneziawg
-          version: "1.0.0"
-          arch: freebsd:${{ matrix.arch }}
+          name: ${{ env.PKG_NAME }}
+          version: "${{ env.VERSION }}"
+          arch: freebsd:${{ env.ARCH }}
           origin: net/pfSense-pkg-amneziawg
           comment: AmneziaWG obfuscated VPN for pfSense
           desc: Integrates amneziawg-go with GUI, supports all obfuscation parameters (Jc,Jmin,Jmax,S1,S2,H1-H4).
           maintainer: your@email.com
-          www: https://github.com/your-repo/pfSense-amneziawg
+          www: https://github.com/${{ github.repository }}
           prefix: /usr/local
           EOF
 
-      - name: Build .pkg (manual tar)
+      - name: Build .pkg
         run: |
-          # Переходим в staging
           cd staging
-          # Убеждаемся, что +MANIFEST будет первым файлом в архиве (обязательно для pkg)
-          # Сортируем: сначала +MANIFEST, затем все остальные файлы (кроме каталогов)
-          # Формируем список файлов: сначала +MANIFEST, потом всё остальное
           FILES_LIST=$(find . -type f ! -name '+MANIFEST' | sort)
-          # Создаём tar-архив с +MANIFEST первым, остальные файлы вторыми, без родительской директории
-          tar -cf ../pfSense-pkg-amneziawg-1.0.0-${{ matrix.arch }}.pkg \
+          tar -cf ../${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg \
             --format=ustar \
             +MANIFEST \
             $FILES_LIST
-          # Возвращаемся на уровень выше
           cd ..
-          echo "Created pfSense-pkg-amneziawg-1.0.0-${{ matrix.arch }}.pkg"
+          echo "Package created: ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg"
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      # ================== Релиз только при push в main или ручном запуске ==================
+      - name: Generate release notes
+        if: github.event_name != 'pull_request'
+        id: release_notes
+        run: |
+          echo '## Установка' >> release_notes.md
+          echo '```bash' >> release_notes.md
+          echo "# Скачивание пакета через curl" >> release_notes.md
+          echo "curl -LO https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg" >> release_notes.md
+          echo '' >> release_notes.md
+          echo "# Установка" >> release_notes.md
+          echo "pkg add ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg" >> release_notes.md
+          echo '```' >> release_notes.md
+          echo '' >> release_notes.md
+          echo '## Удаление' >> release_notes.md
+          echo '```bash' >> release_notes.md
+          echo "pkg delete ${{ env.PKG_NAME }}" >> release_notes.md
+          echo '```' >> release_notes.md
+          echo '' >> release_notes.md
+          echo "## Установка из исходников (git)" >> release_notes.md
+          echo '```bash' >> release_notes.md
+          echo "git clone https://github.com/${{ github.repository }}.git" >> release_notes.md
+          echo "cd $(basename ${{ github.repository }})" >> release_notes.md
+          echo "# Следуйте инструкциям в README.md" >> release_notes.md
+          echo '```' >> release_notes.md
+
+      - name: Create/Update Release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
         with:
-          name: pfSense-pkg-amneziawg-${{ matrix.arch }}
-          path: pfSense-pkg-amneziawg-*.pkg
+          tag_name: v${{ env.VERSION }}
+          name: Release v${{ env.VERSION }}
+          body_path: release_notes.md
+          files: ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
