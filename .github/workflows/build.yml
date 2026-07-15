@@ -1,0 +1,63 @@
+name: Build pfSense AmneziaWG package
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Clone amneziawg-go source
+        run: |
+          git clone https://github.com/amnezia-vpn/amneziawg-go.git amneziawg-src
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build amneziawg-go binary
+        working-directory: amneziawg-src
+        run: |
+          GOOS=freebsd GOARCH=${{ matrix.arch }} CGO_ENABLED=0 go build -o ../amneziawg-go ./cmd/amneziawg-go
+
+      - name: Prepare staging directory
+        run: |
+          mkdir -p staging/usr/local/bin
+          cp amneziawg-go staging/usr/local/bin/
+          cp -r pfsense-files/* staging/
+
+      - name: Create package manifest
+        run: |
+          cat > staging/+MANIFEST << EOF
+          name: pfSense-pkg-amneziawg
+          version: "1.0.0"
+          arch: freebsd:${{ matrix.arch }}
+          origin: net/pfSense-pkg-amneziawg
+          comment: AmneziaWG obfuscated VPN for pfSense
+          desc: Integrates amneziawg-go with GUI, supports all obfuscation parameters (Jc,Jmin,Jmax,S1,S2,H1-H4).
+          maintainer: your@email.com
+          www: https://github.com/your-repo/pfSense-amneziawg
+          prefix: /usr/local
+          EOF
+
+      - name: Build .pkg
+        run: |
+          pkg create -M staging/+MANIFEST -r staging -o .
+          mv pfSense-pkg-amneziawg-1.0.0.pkg pfSense-pkg-amneziawg-1.0.0-${{ matrix.arch }}.pkg
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pfSense-pkg-amneziawg-${{ matrix.arch }}
+          path: pfSense-pkg-amneziawg-*.pkg
