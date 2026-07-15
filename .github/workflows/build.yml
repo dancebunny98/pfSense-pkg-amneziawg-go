@@ -26,7 +26,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          cache: false                     # отключаем кэширование, чтобы не искать go.sum
+          cache: false
 
       - name: Clone amneziawg-go source
         run: |
@@ -147,16 +147,30 @@ jobs:
       - name: Build .pkg
         run: |
           cd staging
+          echo "=== Contents of staging/ ==="
+          find . -type f | sort
           FILES_LIST=$(find . -type f ! -name '+MANIFEST' | sort)
+          if [ -z "$FILES_LIST" ]; then
+            echo "ERROR: No files to package! Check previous steps."
+            exit 1
+          fi
           tar -cf ../${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg \
             --format=ustar \
             +MANIFEST \
             $FILES_LIST
           cd ..
           echo "Package created: ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg"
+          ls -lh ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg
 
-      # Принудительно обновляем тег v1.0.0, даже если он уже был
-      - name: Force update tag
+      # Обязательно сохраняем .pkg как артефакт (видно в Actions)
+      - name: Upload artifact (.pkg)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}
+          path: ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg
+
+      # Релиз только при push в main или ручном запуске
+      - name: Force update tag (if not PR)
         if: github.event_name != 'pull_request'
         run: |
           git config user.name "github-actions[bot]"
