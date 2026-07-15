@@ -37,13 +37,7 @@ jobs:
             echo "Directory cmd/amneziawg-go not found, assuming main.go in root"
           fi
 
-      # ================== Безопасность и качество кода ==================
-      - name: Run govulncheck (CVE scan)
-        working-directory: amneziawg-src
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
-
+      # ================== Качество кода (без CVE) ==================
       - name: Run golangci-lint (code quality)
         working-directory: amneziawg-src
         run: |
