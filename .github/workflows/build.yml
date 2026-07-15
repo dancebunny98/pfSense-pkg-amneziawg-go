@@ -37,8 +37,7 @@ jobs:
             echo "Directory cmd/amneziawg-go not found, assuming main.go in root"
           fi
 
-      # ================== Быстрые проверки без блокировки ==================
-      - name: Run go vet (code sanity)
+      - name: Run go vet (optional, not blocking)
         working-directory: amneziawg-src
         run: go vet ./... || echo "go vet found issues, but continuing..."
 
@@ -67,8 +66,10 @@ jobs:
           mkdir -p staging/usr/local/etc/rc.d
           mkdir -p staging/usr/local/etc/inc
 
+          # Копируем бинарник
           cp amneziawg-go staging/usr/local/bin/
 
+          # Копируем GUI/RC файлы из репозитория
           if [ -d pfsense-files ] && [ "$(ls -A pfsense-files 2>/dev/null)" ]; then
             echo "Copying pfsense-files content..."
             rsync -av --exclude='.gitkeep' pfsense-files/ staging/
@@ -83,20 +84,76 @@ jobs:
             echo "WARNING: GUI/RC files not found. Only binary will be packaged."
           fi
 
+      # ================== Генерация XML-манифеста pfSense ==================
+      - name: Create pfSense package XML
+        run: |
+          cat > staging/usr/local/pkg/amneziawg.xml << 'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <!DOCTYPE packagegui SYSTEM "../schema/packages.dtd">
+          <?xml-stylesheet type="text/xsl" href="../xsl/package.xsl"?>
+          <packagegui>
+            <name>amneziawg</name>
+            <version>1.0.0</version>
+            <title>AmneziaWG Obfuscated VPN</title>
+            <category>Services</category>
+            <license>MIT</license>
+            <description>
+              Integrates AmneziaWG (obfuscated WireGuard) into pfSense.
+              Supports all obfuscation parameters: Jc, Jmin, Jmax, S1, S2, H1-H4.
+              Provides a GUI for tunnel management and service control.
+            </description>
+            <include_file>/usr/local/pkg/amneziawg.inc</include_file>
+            <menu>
+              <name>AmneziaWG</name>
+              <tooltiptext>Manage AmneziaWG Tunnels</tooltiptext>
+              <section>Services</section>
+              <url>/amneziawg/amneziawg.php</url>
+            </menu>
+            <service>
+              <name>amneziawg</name>
+              <rcfile>amneziawg</rcfile>
+              <executable>amneziawg-go</executable>
+              <description>AmneziaWG Daemon</description>
+            </service>
+            <custom_php_install_command>
+              <![CDATA[
+              // Create config directory and enable service
+              mwexec("mkdir -p /var/etc/amneziawg");
+              mwexec("/usr/local/etc/rc.d/amneziawg enable");
+              ]]>
+            </custom_php_install_command>
+            <custom_php_pre_deinstall_command>
+              <![CDATA[
+              // Stop service and remove config files
+              mwexec("/usr/local/etc/rc.d/amneziawg stop");
+              mwexec("rm -rf /var/etc/amneziawg");
+              ]]>
+            </custom_php_pre_deinstall_command>
+            <custom_php_resync_config_command>
+              <![CDATA[
+              // Restart service when config is synced
+              mwexec("/usr/local/etc/rc.d/amneziawg restart");
+              ]]>
+            </custom_php_resync_config_command>
+          </packagegui>
+          XML
+
+      # ================== Создание +MANIFEST (корректный формат) ==================
       - name: Create +MANIFEST
         run: |
-          cat > staging/+MANIFEST << EOF
-          name: ${{ env.PKG_NAME }}
-          version: "${{ env.VERSION }}"
-          arch: freebsd:${{ env.ARCH }}
+          cat > staging/+MANIFEST << 'EOF'
+          name: pfSense-pkg-amneziawg
+          version: "1.0.0"
+          arch: freebsd:amd64
           origin: net/pfSense-pkg-amneziawg
-          comment: AmneziaWG obfuscated VPN for pfSense
-          desc: Integrates amneziawg-go with GUI, supports all obfuscation parameters (Jc,Jmin,Jmax,S1,S2,H1-H4).
+          comment: "AmneziaWG obfuscated VPN for pfSense"
+          desc: "Integrates amneziawg-go with GUI, supports all obfuscation parameters (Jc, Jmin, Jmax, S1, S2, H1-H4)."
           maintainer: your@email.com
-          www: https://github.com/${{ github.repository }}
+          www: https://github.com/your-repo/pfSense-amneziawg
           prefix: /usr/local
           EOF
 
+      # ================== Сборка .pkg ==================
       - name: Build .pkg
         run: |
           cd staging
@@ -108,7 +165,7 @@ jobs:
           cd ..
           echo "Package created: ${{ env.PKG_NAME }}-${{ env.VERSION }}-${{ env.ARCH }}.pkg"
 
-      # ================== Релиз только при push в main или ручном запуске ==================
+      # ================== Релиз ==================
       - name: Generate release notes
         if: github.event_name != 'pull_request'
         id: release_notes
