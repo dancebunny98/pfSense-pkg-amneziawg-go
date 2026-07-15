@@ -1,0 +1,38 @@
+#!/bin/sh
+#
+# PROVIDE: amneziawg
+# REQUIRE: LOGIN
+# KEYWORD: shutdown
+#
+# Add the following to /etc/rc.conf to enable:
+#   amneziawg_enable="YES"
+
+. /etc/rc.subr
+
+name="amneziawg"
+rcvar="amneziawg_enable"
+start_cmd="amneziawg_start"
+stop_cmd="amneziawg_stop"
+restart_cmd="amneziawg_restart"
+status_cmd="amneziawg_status"
+
+amneziawg_start() {
+    /usr/local/bin/php /usr/local/etc/inc/amneziawg_generate.php start
+}
+
+amneziawg_stop() {
+    /usr/local/bin/php /usr/local/etc/inc/amneziawg_generate.php stop
+}
+
+amneziawg_restart() {
+    amneziawg_stop
+    sleep 1
+    amneziawg_start
+}
+
+amneziawg_status() {
+    pgrep -f "/usr/local/bin/amneziawg-go" >/dev/null 2>&1 && echo "AmneziaWG is running" || echo "AmneziaWG is not running"
+}
+
+load_rc_config $name
+run_rc_command "$1"
