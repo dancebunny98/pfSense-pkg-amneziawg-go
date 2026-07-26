@@ -9,6 +9,15 @@ and operates using either the kernel driver (`amnezia-kmod`) or userspace mode
 > Tested on pfSense CE 2.8.1-RELEASE. The web interface is a derivative work
 > based on `pfSense-pkg-WireGuard` (Apache License 2.0), renamed and
 > adapted for AmneziaWG. ---
+<img width="951" height="300" alt="image" src="https://github.com/user-attachments/assets/3f79a41d-4560-42ae-83ad-ed65951b143c" />
+<img width="1223" height="1032" alt="image" src="https://github.com/user-attachments/assets/0ed8e1bc-62b7-4f71-8803-0f4f416fc438" />
+<img width="952" height="1229" alt="image" src="https://github.com/user-attachments/assets/617e19ea-65bc-4e54-8bda-0e5696153603" />
+<img width="950" height="294" alt="image" src="https://github.com/user-attachments/assets/e9e33f62-ebbd-4c7a-8842-208abc91ec9a" />
+<img width="963" height="996" alt="image" src="https://github.com/user-attachments/assets/239011db-153e-4026-91b3-dca7b799767f" />
+<img width="938" height="637" alt="image" src="https://github.com/user-attachments/assets/ddf536ef-4dd0-48bd-94a2-1dbb6de65fbf" />
+<img width="940" height="470" alt="image" src="https://github.com/user-attachments/assets/ef4e954e-e172-42ac-869f-328d700f449b" />
+
+
 
 ## 1. Installing amneziawg-go / amnezia-tools packages
 
